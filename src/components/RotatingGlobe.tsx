@@ -1,221 +1,200 @@
 import { useEffect, useRef } from "react";
+import * as THREE from "three";
 
-// NOC hotspot locations [lat, lng] representing regions
-const HOTSPOTS: [number, number][] = [
-  [40.7, -74.0],   // New York
-  [51.5, -0.1],    // London
-  [35.7, 139.7],   // Tokyo
-  [1.3, 103.8],    // Singapore
-  [48.9, 2.3],     // Paris
-  [-33.9, 151.2],  // Sydney
-  [19.4, -99.1],   // Mexico City
-  [55.8, 37.6],    // Moscow
-  [25.2, 55.3],    // Dubai
-  [-23.5, -46.6],  // São Paulo
-  [28.6, 77.2],    // Delhi
-  [34.0, -118.2],  // Los Angeles
-  [41.9, 12.5],    // Rome
-  [-26.2, 28.0],   // Johannesburg
-  [37.6, 127.0],   // Seoul
+const HOTSPOTS = [
+  { lat: 40.7, lng: -74.0 },
+  { lat: 51.5, lng: -0.1 },
+  { lat: 35.7, lng: 139.7 },
+  { lat: 1.3, lng: 103.8 },
+  { lat: 48.9, lng: 2.3 },
+  { lat: -33.9, lng: 151.2 },
+  { lat: 25.2, lng: 55.3 },
+  { lat: -23.5, lng: -46.6 },
+  { lat: 28.6, lng: 77.2 },
+  { lat: 34.0, lng: -118.2 },
+  { lat: 37.6, lng: 127.0 },
+  { lat: 55.8, lng: 37.6 },
 ];
 
-// Active connection pairs (indices into HOTSPOTS)
-const CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4], [0, 9], [1, 7],
-  [4, 5], [3, 6], [7, 8], [2, 14], [0, 11], [8, 12],
+const ARCS = [
+  { startLat: 40.7, startLng: -74.0, endLat: 51.5, endLng: -0.1 },
+  { startLat: 51.5, startLng: -0.1, endLat: 48.9, endLng: 2.3 },
+  { startLat: 51.5, startLng: -0.1, endLat: 35.7, endLng: 139.7 },
+  { startLat: 35.7, startLng: 139.7, endLat: 1.3, endLng: 103.8 },
+  { startLat: 1.3, startLng: 103.8, endLat: -33.9, endLng: 151.2 },
+  { startLat: 40.7, startLng: -74.0, endLat: -23.5, endLng: -46.6 },
+  { startLat: 40.7, startLng: -74.0, endLat: 34.0, endLng: -118.2 },
+  { startLat: 25.2, startLng: 55.3, endLat: 28.6, endLng: 77.2 },
+  { startLat: 25.2, startLng: 55.3, endLat: 51.5, endLng: -0.1 },
+  { startLat: 37.6, startLng: 127.0, endLat: 35.7, endLng: 139.7 },
+  { startLat: 55.8, startLng: 37.6, endLat: 48.9, endLng: 2.3 },
+  { startLat: 34.0, startLng: -118.2, endLat: 1.3, endLng: 103.8 },
 ];
-
-function latLngToXYZ(lat: number, lng: number, r: number): [number, number, number] {
-  const phi = (90 - lat) * (Math.PI / 180);
-  const theta = (lng + 180) * (Math.PI / 180);
-  return [
-    -r * Math.sin(phi) * Math.cos(theta),
-    r * Math.cos(phi),
-    r * Math.sin(phi) * Math.sin(theta),
-  ];
-}
-
-function project(
-  x: number, y: number, z: number,
-  rotY: number, cx: number, cy: number, scale: number
-): { sx: number; sy: number; depth: number } {
-  // Rotate around Y axis
-  const cosY = Math.cos(rotY);
-  const sinY = Math.sin(rotY);
-  const rx = x * cosY + z * sinY;
-  const rz = -x * sinY + z * cosY;
-  // Simple perspective
-  const perspective = 2.4;
-  const zNorm = (rz + scale) / (scale * perspective);
-  return {
-    sx: cx + (rx / scale) * scale * zNorm * (scale / scale),
-    sy: cy - (y / scale) * scale * zNorm,
-    depth: rz,
-  };
-}
 
 export default function RotatingGlobe() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rotRef = useRef(0);
-  const rafRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const globeInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const el = containerRef.current;
+    if (!el) return;
 
-    const W = canvas.width;
-    const H = canvas.height;
-    const cx = W / 2;
-    const cy = H / 2;
-    const R = Math.min(W, H) * 0.38;
+    let destroyed = false;
+    let globe: any = null;
 
-    function draw() {
-      ctx!.clearRect(0, 0, W, H);
+    import("globe.gl").then((mod) => {
+      if (destroyed || !el) return;
 
-      const rot = rotRef.current;
+      const GlobeGL = mod.default;
+      const width = el.clientWidth || 720;
+      const height = el.clientHeight || 405;
 
-      // Draw globe sphere gradient
-      const grad = ctx!.createRadialGradient(cx - R * 0.25, cy - R * 0.2, R * 0.05, cx, cy, R);
-      grad.addColorStop(0, "rgba(59,130,246,0.18)");
-      grad.addColorStop(0.5, "rgba(37,99,235,0.10)");
-      grad.addColorStop(1, "rgba(15,23,42,0.60)");
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx!.fillStyle = grad;
-      ctx!.fill();
+      globe = GlobeGL()(el);
+      globeInstanceRef.current = globe;
 
-      // Draw latitude lines
-      for (let lat = -75; lat <= 75; lat += 30) {
-        ctx!.beginPath();
-        let first = true;
-        for (let lng = -180; lng <= 180; lng += 4) {
-          const [x, y, z] = latLngToXYZ(lat, lng, R);
-          const cosY = Math.cos(rot);
-          const sinY = Math.sin(rot);
-          const rx = x * cosY + z * sinY;
-          const rz = -x * sinY + z * cosY;
-          const screenX = cx + rx;
-          const screenY = cy - y;
-          if (first) { ctx!.moveTo(screenX, screenY); first = false; }
-          else ctx!.lineTo(screenX, screenY);
+      // Globe surface material — deep navy
+      const globeMat = new THREE.MeshPhongMaterial({
+        color: new THREE.Color("#020d1f"),
+        emissive: new THREE.Color("#050f25"),
+        shininess: 8,
+        specular: new THREE.Color("#1a4080"),
+      });
+
+      globe
+        .width(width)
+        .height(height)
+        .backgroundColor("rgba(0,0,0,0)")
+        .globeMaterial(globeMat)
+        .atmosphereColor("#2563eb")
+        .atmosphereAltitude(0.22)
+        // Hotspot points
+        .pointsData(HOTSPOTS)
+        .pointLat("lat")
+        .pointLng("lng")
+        .pointColor(() => "#60a5fa")
+        .pointAltitude(0.015)
+        .pointRadius(0.45)
+        // Connection arcs
+        .arcsData(ARCS)
+        .arcStartLat("startLat")
+        .arcStartLng("startLng")
+        .arcEndLat("endLat")
+        .arcEndLng("endLng")
+        .arcColor(() => ["rgba(30,64,175,0.6)", "rgba(96,165,250,0.9)"])
+        .arcAltitudeAutoScale(0.35)
+        .arcStroke(0.5)
+        .arcDashLength(0.5)
+        .arcDashGap(0.25)
+        .arcDashAnimateTime(2200)
+        // Pulse rings on hotspots
+        .ringsData(HOTSPOTS)
+        .ringLat("lat")
+        .ringLng("lng")
+        .ringColor(() => (t: number) => `rgba(96,165,250,${Math.max(0, 1 - t)})`)
+        .ringMaxRadius(3.5)
+        .ringPropagationSpeed(2.5)
+        .ringRepeatPeriod(900)
+        // No user interaction / zoom
+        .enablePointerInteraction(false);
+
+      // Fetch and apply GeoJSON country polygons
+      fetch(
+        "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"
+      )
+        .then((r) => r.json())
+        .then((geo) => {
+          if (destroyed) return;
+          globe
+            .polygonsData(geo.features)
+            .polygonCapColor(() => "#0f3460")
+            .polygonSideColor(() => "#091a35")
+            .polygonStrokeColor(() => "#1e4d8c")
+            .polygonAltitude(0.006);
+        })
+        .catch(() => {});
+
+      // Auto-rotate
+      const controls = globe.controls();
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.7;
+      controls.enableZoom = false;
+      controls.enablePan = false;
+      controls.enableRotate = false;
+
+      // Better lighting
+      const scene = globe.scene();
+
+      // Remove default lights if any
+      const toRemove: THREE.Object3D[] = [];
+      scene.traverse((obj: THREE.Object3D) => {
+        if (obj instanceof THREE.DirectionalLight || obj instanceof THREE.AmbientLight) {
+          toRemove.push(obj);
         }
-        const visible = true;
-        if (visible) {
-          ctx!.strokeStyle = "rgba(99,179,237,0.12)";
-          ctx!.lineWidth = 0.5;
-          ctx!.stroke();
-        }
+      });
+      toRemove.forEach((obj) => scene.remove(obj));
+
+      const ambient = new THREE.AmbientLight(0x1a3a70, 3);
+      scene.add(ambient);
+
+      const keyLight = new THREE.DirectionalLight(0x3b82f6, 1.5);
+      keyLight.position.set(5, 3, 5);
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0x1e40af, 0.6);
+      fillLight.position.set(-5, -2, -3);
+      scene.add(fillLight);
+
+      // Resize
+      const onResize = () => {
+        if (!el || destroyed) return;
+        globe.width(el.clientWidth).height(el.clientHeight);
+      };
+      window.addEventListener("resize", onResize);
+
+      return () => window.removeEventListener("resize", onResize);
+    });
+
+    return () => {
+      destroyed = true;
+      if (globeInstanceRef.current) {
+        try { globeInstanceRef.current._destructor?.(); } catch {}
+        globeInstanceRef.current = null;
       }
-
-      // Draw longitude lines
-      for (let lng = 0; lng < 360; lng += 30) {
-        ctx!.beginPath();
-        let first = true;
-        for (let lat = -90; lat <= 90; lat += 4) {
-          const [x, y, z] = latLngToXYZ(lat, lng, R);
-          const cosY = Math.cos(rot);
-          const sinY = Math.sin(rot);
-          const rx = x * cosY + z * sinY;
-          const rz = -x * sinY + z * cosY;
-          const screenX = cx + rx;
-          const screenY = cy - y;
-          if (first) { ctx!.moveTo(screenX, screenY); first = false; }
-          else ctx!.lineTo(screenX, screenY);
-        }
-        ctx!.strokeStyle = "rgba(99,179,237,0.12)";
-        ctx!.lineWidth = 0.5;
-        ctx!.stroke();
-      }
-
-      // Project hotspots
-      const projected = HOTSPOTS.map(([lat, lng]) => {
-        const [x, y, z] = latLngToXYZ(lat, lng, R);
-        const cosY = Math.cos(rot);
-        const sinY = Math.sin(rot);
-        const rx = x * cosY + z * sinY;
-        const rz = -x * sinY + z * cosY;
-        return { sx: cx + rx, sy: cy - y, depth: rz, visible: rz > -R * 0.1 };
-      });
-
-      // Draw connection arcs (only between visible points)
-      CONNECTIONS.forEach(([a, b]) => {
-        const pa = projected[a];
-        const pb = projected[b];
-        if (!pa.visible || !pb.visible) return;
-        const mx = (pa.sx + pb.sx) / 2;
-        const my = (pa.sy + pb.sy) / 2 - R * 0.18;
-        ctx!.beginPath();
-        ctx!.moveTo(pa.sx, pa.sy);
-        ctx!.quadraticCurveTo(mx, my, pb.sx, pb.sy);
-        ctx!.strokeStyle = "rgba(59,130,246,0.35)";
-        ctx!.lineWidth = 0.8;
-        ctx!.stroke();
-      });
-
-      // Draw hotspot dots
-      projected.forEach(({ sx, sy, depth, visible }) => {
-        if (!visible) return;
-        const alpha = Math.max(0.3, (depth + R) / (2 * R));
-        // Outer ring
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 5, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(59,130,246,${alpha * 0.2})`;
-        ctx!.fill();
-        // Inner dot
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 2.5, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(147,197,253,${alpha})`;
-        ctx!.fill();
-        // Pulse ring (animated via opacity trick)
-        const pulse = (Math.sin(Date.now() * 0.003 + sx) + 1) / 2;
-        ctx!.beginPath();
-        ctx!.arc(sx, sy, 5 + pulse * 4, 0, Math.PI * 2);
-        ctx!.strokeStyle = `rgba(59,130,246,${alpha * 0.4 * (1 - pulse)})`;
-        ctx!.lineWidth = 1;
-        ctx!.stroke();
-      });
-
-      // Globe rim glow
-      const rimGrad = ctx!.createRadialGradient(cx, cy, R * 0.85, cx, cy, R);
-      rimGrad.addColorStop(0, "rgba(59,130,246,0)");
-      rimGrad.addColorStop(1, "rgba(59,130,246,0.18)");
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx!.strokeStyle = "rgba(99,179,237,0.35)";
-      ctx!.lineWidth = 1.5;
-      ctx!.stroke();
-      ctx!.fillStyle = rimGrad;
-      ctx!.fill();
-
-      rotRef.current += 0.003;
-      rafRef.current = requestAnimationFrame(draw);
-    }
-
-    rafRef.current = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(rafRef.current);
+      // Clear the container
+      if (el) el.innerHTML = "";
+    };
   }, []);
 
   return (
-    <div className="w-full aspect-video rounded border border-border bg-[#060d1a] flex items-center justify-center relative overflow-hidden">
-      {/* Starfield background */}
-      <div className="absolute inset-0"
+    <div
+      className="w-full aspect-video rounded border border-blue-900/40 overflow-hidden relative"
+      style={{
+        background: "radial-gradient(ellipse at 50% 60%, #071428 0%, #020810 100%)",
+      }}
+    >
+      {/* Star field */}
+      <div
+        className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)`,
-          backgroundSize: "60px 60px",
-          opacity: 0.12,
+          backgroundImage:
+            "radial-gradient(circle, rgba(255,255,255,0.75) 1px, transparent 1px)",
+          backgroundSize: "90px 90px",
+          opacity: 0.15,
         }}
       />
-      <canvas
-        ref={canvasRef}
-        width={720}
-        height={405}
-        className="w-full h-full"
-        style={{ display: "block" }}
+      {/* Second star layer offset */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)",
+          backgroundSize: "50px 50px",
+          backgroundPosition: "25px 25px",
+          opacity: 0.1,
+        }}
       />
-      {/* Overlay label */}
-      <div className="absolute bottom-3 left-3 text-[9px] font-mono uppercase text-blue-400/60 tracking-widest">
+      <div ref={containerRef} className="w-full h-full" />
+      <div className="absolute bottom-3 left-3 text-[9px] font-mono uppercase text-blue-400/50 tracking-widest pointer-events-none select-none">
         Global NOC Coverage — 5 Regions Live
       </div>
     </div>
