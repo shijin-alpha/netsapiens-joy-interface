@@ -31,6 +31,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import nocViz from "@/assets/noc-visualization.jpg";
+import RotatingGlobe from "@/components/RotatingGlobe";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -358,13 +359,7 @@ function Index() {
                     <div className="text-2xl font-mono font-bold text-primary">99.4<span className="text-[10px] ml-1">%</span></div>
                   </div>
                 </div>
-                <img
-                  src={nocViz}
-                  alt="Live NetSapiens network coverage map"
-                  width={1280}
-                  height={640}
-                  className="w-full aspect-video object-cover rounded border border-border"
-                />
+                <RotatingGlobe />
                 <div className="flex items-center justify-between text-[10px] font-mono uppercase text-muted-foreground">
                   <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-primary [animation:pulse-soft_2s_infinite]" /> Live feed</span>
                   <span>Updated 0.3s ago</span>
