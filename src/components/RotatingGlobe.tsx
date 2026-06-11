@@ -71,7 +71,7 @@ export default function RotatingGlobe() {
         .pointsData(HOTSPOTS)
         .pointLat("lat")
         .pointLng("lng")
-        .pointColor(() => "#60a5fa")
+        .pointColor(() => "#4ade80")
         .pointAltitude(0.015)
         .pointRadius(0.45)
         // Connection arcs
@@ -80,17 +80,17 @@ export default function RotatingGlobe() {
         .arcStartLng("startLng")
         .arcEndLat("endLat")
         .arcEndLng("endLng")
-        .arcColor(() => ["rgba(30,64,175,0.6)", "rgba(96,165,250,0.9)"])
+        .arcColor(() => ["rgba(22,163,74,0.5)", "rgba(74,222,128,1)"])
         .arcAltitudeAutoScale(0.35)
-        .arcStroke(0.5)
+        .arcStroke(0.6)
         .arcDashLength(0.5)
         .arcDashGap(0.25)
-        .arcDashAnimateTime(2200)
+        .arcDashAnimateTime(1800)
         // Pulse rings on hotspots
         .ringsData(HOTSPOTS)
         .ringLat("lat")
         .ringLng("lng")
-        .ringColor(() => (t: number) => `rgba(96,165,250,${Math.max(0, 1 - t)})`)
+        .ringColor(() => (t: number) => `rgba(74,222,128,${Math.max(0, 1 - t)})`)
         .ringMaxRadius(3.5)
         .ringPropagationSpeed(2.5)
         .ringRepeatPeriod(900)
@@ -194,7 +194,7 @@ export default function RotatingGlobe() {
         }}
       />
       <div ref={containerRef} className="w-full h-full" />
-      <div className="absolute bottom-3 left-3 text-[9px] font-mono uppercase text-blue-400/50 tracking-widest pointer-events-none select-none">
+      <div className="absolute bottom-3 left-3 text-[9px] font-mono uppercase text-green-400/50 tracking-widest pointer-events-none select-none">
         Global NOC Coverage — 5 Regions Live
       </div>
     </div>
